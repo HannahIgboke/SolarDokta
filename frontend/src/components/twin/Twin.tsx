@@ -15,9 +15,9 @@ const C = {
   warn: "#c46a00", alarm: "#c93636", muted: "#8a96a8", line: "#d5dde6",
 };
 
-function Flow({ d, watts, color, peak, reverse = false, label, lx, ly }: {
+function Flow({ d, watts, color, peak, reverse = false, label, lx, ly, size = 13 }: {
   d: string; watts: number; color: string; peak: number; reverse?: boolean;
-  label?: string; lx?: number; ly?: number;
+  label?: string; lx?: number; ly?: number; size?: number;
 }) {
   const active = watts >= 20;
   const width = active ? 2.5 + 6 * Math.min(1, watts / peak) : 1.5;
@@ -32,7 +32,7 @@ function Flow({ d, watts, color, peak, reverse = false, label, lx, ly }: {
                 animationDirection: reverse ? "reverse" : "normal" }} />
       )}
       {label && lx !== undefined && (
-        <text x={lx} y={ly} fontSize="13" fontWeight="600" fill={active ? C.ink : C.muted}>{label}</text>
+        <text x={lx} y={ly} fontSize={size} fontWeight="600" fill={active ? C.ink : C.muted}>{label}</text>
       )}
     </g>
   );
@@ -82,21 +82,22 @@ function Panels({ s, x0, y0, angle }: { s: PanelString; x0: number; y0: number; 
   );
 }
 
-function StringTag({ s, x, y }: { s: PanelString; x: number; y: number }) {
+function StringTag({ s, x, y, k = 1 }: { s: PanelString; x: number; y: number; k?: number }) {
   const tone = s.status === "dead" ? C.alarm : s.status === "ok" ? C.ink : C.warn;
   const word = s.status === "ok" ? kw(s.now_w) : s.status === "dead" ? "not working" : s.status;
   return (
-    <g transform={`translate(${x} ${y})`}>
-      <rect x="-4" y="-14" width="104" height="20" rx="10" fill="#ffffff" fillOpacity="0.85" />
-      <text x="48" y="0.5" textAnchor="middle" fontSize="11.5" fontWeight="600" fill={tone}>
+    <g transform={`translate(${x} ${y}) scale(${k})`}>
+      <rect x="-4" y="-14" width="118" height="20" rx="10" fill="#ffffff" fillOpacity="0.85" />
+      <text x="55" y="0.5" textAnchor="middle" fontSize="11.5" fontWeight="600" fill={tone}>
         Panel group {s.number}: {word}
       </text>
     </g>
   );
 }
 
-export function Twin({ live, selected, onSelect }: {
+export function Twin({ live, selected, onSelect, phone = false }: {
   live: Live; selected: Part | null; onSelect: (p: Part) => void;
+  phone?: boolean;   // phone layout: the whole picture fits the screen, with bigger words
 }) {
   const day = live.is_day;
   const peak = Math.max(1500, live.inverter.kw * 1000 * 0.6);
@@ -106,9 +107,10 @@ export function Twin({ live, selected, onSelect }: {
   const [s1, s2] = live.strings;
   const apps = live.appliances.slice(0, 12);
   const battFlow = Math.abs(b.power_w);
+  const k = phone ? 1.6 : 1;
 
   return (
-    <svg viewBox="0 0 800 470" className="h-auto w-full" role="group"
+    <svg viewBox={phone ? "112 52 672 394" : "0 0 800 470"} className="h-auto w-full" role="group"
          aria-label={`Live picture of your system. ${live.headline}`}>
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
@@ -131,13 +133,13 @@ export function Twin({ live, selected, onSelect }: {
       <rect y="428" width="800" height="42" fill={day ? "#cfd9cb" : "#1d2b47"} />
       {day ? (
         <g opacity={0.35 + 0.65 * live.sun}>
-          <circle cx="86" cy="78" r={70} fill="url(#glow)" />
-          <circle cx="86" cy="78" r={22 + 12 * live.sun} fill={C.sun} />
+          <circle cx={phone ? 590 : 86} cy={phone ? 110 : 78} r={70} fill="url(#glow)" />
+          <circle cx={phone ? 590 : 86} cy={phone ? 110 : 78} r={(22 + 12 * live.sun) * (phone ? 0.7 : 1)} fill={C.sun} />
         </g>
       ) : (
         <g>
-          <circle cx="90" cy="76" r="20" fill="#e8ecf3" />
-          <circle cx="99" cy="70" r="18" fill="#1b2a4a" />
+          <circle cx={phone ? 590 : 90} cy={phone ? 112 : 76} r="20" fill="#e8ecf3" />
+          <circle cx={phone ? 599 : 99} cy={phone ? 106 : 70} r="18" fill="#1b2a4a" />
           {[[180, 40], [260, 80], [520, 50], [640, 95], [720, 40], [420, 30]].map(([x, y]) => (
             <circle key={`${x}-${y}`} cx={x} cy={y} r="1.6" fill="#e8ecf3" opacity="0.8" />
           ))}
@@ -153,7 +155,7 @@ export function Twin({ live, selected, onSelect }: {
         <path d="M688 170 C 650 205, 610 222, 582 238" fill="none"
               stroke={live.nepa_on ? C.nepa : C.muted} strokeWidth={live.nepa_on ? 3 : 2}
               strokeDasharray={live.nepa_on ? undefined : "5 5"} />
-        <g transform="translate(676 104)">
+        <g transform={phone ? "translate(664 96) scale(1.55)" : "translate(676 104)"}>
           <rect width="74" height="26" rx="13" fill={live.nepa_on ? C.nepa : "#ffffff"}
                 stroke={live.nepa_on ? C.nepa : C.line} />
           <text x="37" y="17.5" textAnchor="middle" fontSize="12.5" fontWeight="700"
@@ -169,24 +171,24 @@ export function Twin({ live, selected, onSelect }: {
         <Clickable part="string-1" selected={selected} onSelect={onSelect}
                    label={`Panel string 1: ${kw(s1.now_w)}, ${s1.status}`}>
           <Panels s={s1} x0={130} y0={214} angle={-22.1} />
-          <StringTag s={s1} x={150} y={150} />
+          <StringTag s={s1} x={phone ? 134 : 150} y={phone ? 80 : 150} k={phone ? 1.5 : 1} />
         </Clickable>
       )}
       {s2 && (
         <Clickable part="string-2" selected={selected} onSelect={onSelect}
                    label={`Panel string 2: ${kw(s2.now_w)}, ${s2.status}`}>
           <Panels s={s2} x0={366} y0={120} angle={22.1} />
-          <StringTag s={s2} x={500} y={128} />
+          <StringTag s={s2} x={phone ? 322 : 500} y={phone ? 80 : 128} k={phone ? 1.5 : 1} />
         </Clickable>
       )}
 
       {/* power lines inside */}
       <Flow d="M366 205 C 366 236, 214 228, 214 262" watts={live.solar_w} color={C.sun} peak={peak}
-            label={`☀ ${kw(live.solar_w)}`} lx={300} ly={198} />
+            label={`☀ ${kw(live.solar_w)}`} lx={phone ? 290 : 300} ly={phone ? 200 : 198} size={13 * k} />
       <Flow d="M580 240 H 262 V 262" watts={live.nepa_w} color={C.nepa} peak={peak} />
       <Flow d="M250 318 H 292" watts={battFlow} color={C.charge} peak={peak} reverse={b.power_w < 0} />
       <Flow d="M250 296 C 300 296, 320 300, 360 300" watts={live.house_w} color={C.ink} peak={peak}
-            label={`${kw(live.house_w)} in use`} lx={258} ly={286} />
+            label={phone ? undefined : `${kw(live.house_w)} in use`} lx={258} ly={286} />
 
       {/* inverter */}
       <Clickable part="inverter" selected={selected} onSelect={onSelect}
@@ -199,7 +201,7 @@ export function Twin({ live, selected, onSelect }: {
         <circle cx="198" cy="320" r="4" fill={live.nepa_on ? C.nepa : "#3d4f73"} />
         <circle cx="214" cy="320" r="4" fill={live.solar_w > 20 ? C.sun : "#3d4f73"} />
         <circle cx="230" cy="320" r="4" fill={b.status !== "resting" ? C.charge : "#3d4f73"} />
-        <text x="214" y="376" textAnchor="middle" fontSize="12" fill={C.ink}>Inverter</text>
+        <text x="214" y={phone ? 382 : 376} textAnchor="middle" fontSize={12 * k} fill={C.ink}>Inverter</text>
       </Clickable>
 
       {/* battery */}
@@ -208,8 +210,8 @@ export function Twin({ live, selected, onSelect }: {
         <rect x="306" y="252" width="16" height="8" rx="2" fill={C.ink} />
         <rect x="292" y="258" width="44" height="112" rx="6" fill="#ffffff" stroke={C.ink} strokeWidth="2.5" />
         <rect x="297" y={263 + 102 * (1 - level)} width="34" height={102 * level} rx="3" fill={battColor} />
-        <text x="314" y="392" textAnchor="middle" fontSize="15" fontWeight="700" fill={C.ink}>{b.percent}%</text>
-        <text x="314" y="408" textAnchor="middle" fontSize="11" fill={C.muted}>
+        <text x="314" y={phone ? 398 : 392} textAnchor="middle" fontSize={15 * k} fontWeight="700" fill={C.ink}>{b.percent}%</text>
+        <text x="314" y={phone ? 420 : 408} textAnchor="middle" fontSize={11 * (phone ? 1.4 : 1)} fill={C.muted}>
           {b.status === "charging" ? "charging" : b.status === "discharging" ? "in use" : "resting"}
         </text>
       </Clickable>
@@ -226,9 +228,11 @@ export function Twin({ live, selected, onSelect }: {
               <circle cx={cx} cy={cy} r="18" fill={a.on ? "#fdf0c4" : "#f1f4f7"}
                       stroke={a.on ? C.sun : C.line} strokeWidth={a.on ? 2.5 : 1} />
               <ApplianceIcon name={a.name} x={cx - 10} y={cy - 10} />
-              <text x={cx} y={cy + 30} textAnchor="middle" fontSize="9.5" fill={a.on ? C.ink : C.muted}>
-                {applianceShort(a.name)}
-              </text>
+              {!phone && (
+                <text x={cx} y={cy + 30} textAnchor="middle" fontSize="9.5" fill={a.on ? C.ink : C.muted}>
+                  {applianceShort(a.name)}
+                </text>
+              )}
             </g>
           );
         })}

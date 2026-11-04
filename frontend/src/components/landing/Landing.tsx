@@ -183,7 +183,6 @@ export function Landing() {
       <footer className="bg-[#0a1326] py-8 text-sm text-white/60">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 sm:px-6">
           <span className="flex items-center gap-2"><Logo className="h-6 w-6" /> SolarDokta, Lagos 2026</span>
-          <span>Built at the TAG AI Engineering Bootcamp</span>
           <Link href="/login" className="underline">Customer or installer? Sign in</Link>
         </div>
       </footer>

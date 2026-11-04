@@ -1,7 +1,7 @@
 "use client";
 // "Learn": every solar word SolarDokta uses, with a picture, a plain explanation in the
 // customer's language, how theirs is doing right now, and for some, a small thing to try.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLang, type Lang } from "@/lib/i18n";
 import type { Live } from "@/lib/types";
 import { kw } from "@/lib/useApi";
@@ -633,7 +633,17 @@ export function Learn({ live, start }: { live: Live; start?: string }) {
   const Try = term.Try;
   const extra = EXTRAS[id];
   const pos = ORDER.indexOf(id);
-  const go = (next: string) => { setId(next); setSeen((s) => new Set(s).add(next)); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const card = useRef<HTMLElement>(null);
+  const go = (next: string) => {
+    setId(next);
+    setSeen((s) => new Set(s).add(next));
+    // On a phone the explanation sits under the word list, so bring it into view; on a wide
+    // screen it's beside the list, so go back to the top.
+    const el = card.current;
+    if (el && window.matchMedia("(max-width: 1023px)").matches) {
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" });
+    } else window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <div>
@@ -666,7 +676,7 @@ export function Learn({ live, start }: { live: Live; start?: string }) {
             </div>
           ))}
         </nav>
-        <article key={term.id} className="msg-in space-y-5 rounded-3xl bg-white p-5 sm:p-7">
+        <article ref={card} key={term.id} className="msg-in scroll-mt-20 space-y-5 rounded-3xl bg-white p-5 sm:p-7">
           <div className="grid gap-6 md:grid-cols-[1fr_1.1fr] md:items-center">
             <div className="aspect-[13/8] rounded-2xl bg-[#f4f7fa] p-3"><term.Picture live={live} /></div>
             <div>

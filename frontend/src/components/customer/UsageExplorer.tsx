@@ -6,6 +6,7 @@ import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine,
 import { useLang } from "@/lib/i18n";
 import type { Usage } from "@/lib/types";
 import { naira, useApi } from "@/lib/useApi";
+import { usePhone } from "@/lib/usePhone";
 import { Failed, Loading } from "../Section";
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -32,33 +33,36 @@ export function UsageExplorer({ code }: { code: string }) {
     { id: "month", label: t("usage.month"), start: daysAgo(29), end: daysAgo(0) },
   ];
   const [range, setRange] = useState({ start: daysAgo(6), end: daysAgo(0) });
+  const phone = usePhone();
   const { data, error, loading } = useApi<Usage>(`/api/sites/${code}/views/usage?start=${range.start}&end=${range.end}`);
   const active = quick.find((q) => q.start === range.start && q.end === range.end)?.id;
   const points = useMemo(() => (data?.points ?? []).map((p) => ({
     ...p, band: p.battery_low !== null && p.battery_high !== null ? [p.battery_low, p.battery_high] : null,
   })), [data]);
-  const tick = data?.mode === "hours" ? 2 : points.length > 14 ? Math.ceil(points.length / 10) - 1 : 0;
+  const wide = data?.mode === "hours" ? 2 : points.length > 14 ? Math.ceil(points.length / 10) - 1 : 0;
+  const tick = phone ? Math.max(wide, Math.ceil(points.length / 4) - 1) : wide;   // about 4 labels on a phone
 
   return (
     <div className="space-y-5">
       <div className="rounded-3xl bg-white p-5">
         <h2 className="font-display text-2xl font-semibold">{t("usage.pick")}</h2>
         <p className="mt-1 text-sm text-muted">{t("usage.hint")}</p>
-        <div className="mt-4 flex flex-wrap items-end gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           {quick.map((q) => (
             <button key={q.id} onClick={() => setRange({ start: q.start, end: q.end })} aria-pressed={active === q.id}
                     className={`rounded-full px-4 py-2 text-sm font-medium ${active === q.id ? "bg-ink text-sky" : "bg-sky hover:bg-line"}`}>
               {q.label}
             </button>
           ))}
-          <span className="mx-1 hidden h-8 w-px bg-line sm:block" />
-          <label className="text-xs text-muted">{t("usage.from")}<br />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:gap-3">
+          <label className="block text-xs text-muted">{t("usage.from")}
             <input type="date" value={range.start} max={range.end} onChange={(e) => e.target.value && setRange((r) => ({ ...r, start: e.target.value }))}
-                   className="rounded-full border border-line bg-sky px-3 py-1.5 text-sm text-ink" />
+                   className="mt-1 block w-full min-w-0 rounded-full border border-line bg-sky px-3 py-1.5 text-sm text-ink sm:w-auto" />
           </label>
-          <label className="text-xs text-muted">{t("usage.to")}<br />
+          <label className="block text-xs text-muted">{t("usage.to")}
             <input type="date" value={range.end} min={range.start} max={daysAgo(0)} onChange={(e) => e.target.value && setRange((r) => ({ ...r, end: e.target.value }))}
-                   className="rounded-full border border-line bg-sky px-3 py-1.5 text-sm text-ink" />
+                   className="mt-1 block w-full min-w-0 rounded-full border border-line bg-sky px-3 py-1.5 text-sm text-ink sm:w-auto" />
           </label>
         </div>
       </div>

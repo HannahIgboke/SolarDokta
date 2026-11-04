@@ -2,6 +2,7 @@
 // One day in a Lagos home, played in about 20 seconds: the sun crosses, the battery fills and
 // empties, NEPA comes and goes, and SolarDokta sends the messages it would really send.
 import { useEffect, useState } from "react";
+import { usePhone } from "@/lib/usePhone";
 
 type Msg = { at: number; text: string; tone: "ok" | "warn" | "info" };
 const MESSAGES: Msg[] = [
@@ -28,6 +29,7 @@ const fmt = (t: number) => {
 export function HeroScene() {
   const [t, setT] = useState(13.6);
   const [still, setStill] = useState(false);
+  const phone = usePhone();
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -45,17 +47,22 @@ export function HeroScene() {
 
   const day = t > 6 && t < 18.6;
   const sunAngle = Math.PI * ((t - 6) / 12.6);
-  const sunX = 140 + 920 * ((t - 6) / 12.6);
+  // On a phone the picture is cropped to the middle (pole, house, battery, clock) and the words are bigger.
+  const sunX = phone ? 470 + 640 * ((t - 6) / 12.6) : 140 + 920 * ((t - 6) / 12.6);
+  const k = phone ? 1.6 : 1;
+  const poleX = phone ? 500 : 110;
   const sunY = 250 - Math.sin(sunAngle) * 200;
   const strength = day ? Math.max(0, Math.sin(sunAngle)) : 0;
   const pv2Dead = t >= 10.67;
   const soc = battery(t);
   const grid = nepaOn(t);
-  const shown = still ? MESSAGES.slice(1, 4) : MESSAGES.filter((m) => m.at <= t).slice(-3);
+  const today = MESSAGES.filter((m) => m.at <= t);
+  // before the first message of the day, keep showing last night's messages
+  const shown = still ? MESSAGES.slice(1, 4) : (today.length ? today : MESSAGES.slice(-2)).slice(-3);
 
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[#0d1830]">
-      <svg viewBox="0 0 1200 360" preserveAspectRatio="xMidYMid slice" className="block h-[190px] w-full sm:h-auto" role="img"
+      <svg viewBox={phone ? "424 0 736 360" : "0 0 1200 360"} className="block h-auto w-full" role="img"
            aria-label="A house with solar panels, a battery and NEPA over one day">
         <defs>
           <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
@@ -75,13 +82,13 @@ export function HeroScene() {
         <path d="M0 300 Q300 285 600 296 T1200 292 V360 H0Z" fill="#203a2c" />
 
         {/* NEPA pole and line */}
-        <g transform="translate(110 150)">
+        <g transform={`translate(${poleX} 150)`}>
           <rect x="-4" y="0" width="8" height="150" fill="#5b4a3a" />
           <rect x="-34" y="10" width="68" height="6" fill="#5b4a3a" />
           <circle cx="0" cy="-10" r="9" fill={grid ? "#7ea2ff" : "#3a4660"} />
-          <text x="0" y="-28" textAnchor="middle" fontSize="15" fill="#eef2f5" fontWeight="600">NEPA {grid ? "on" : "off"}</text>
+          <text x="0" y={phone ? -32 : -28} textAnchor="middle" fontSize={15 * k} fill="#eef2f5" fontWeight="600">NEPA {grid ? "on" : "off"}</text>
         </g>
-        <path d="M144 163 Q400 200 640 220" fill="none" stroke={grid ? "#7ea2ff" : "#3a4660"} strokeWidth="2.5"
+        <path d={phone ? "M534 163 Q590 195 640 220" : "M144 163 Q400 200 640 220"} fill="none" stroke={grid ? "#7ea2ff" : "#3a4660"} strokeWidth="2.5"
               className={grid ? "twin-flow" : ""} />
 
         {/* house */}
@@ -111,13 +118,14 @@ export function HeroScene() {
           <rect x="22" y="-8" width="20" height="8" rx="2" fill="#eef2f5" />
           <rect x="6" y={6 + 92 * (1 - soc / 100)} width="52" height={92 * (soc / 100)} rx="4"
                 fill={soc > 30 ? "#1e9e6a" : "#c93636"} />
-          <text x="32" y="130" textAnchor="middle" fontSize="20" fontWeight="700" fill="#eef2f5">{Math.round(soc)}%</text>
+          <text x="32" y={phone ? 92 : 130} textAnchor="middle" fontSize={20 * k} fontWeight="700" fill={phone ? "#ffffff" : "#eef2f5"}
+                stroke={phone ? "#0d1830" : "none"} strokeWidth={phone ? 4 : 0} paintOrder="stroke">{Math.round(soc)}%</text>
         </g>
         <path d="M820 270 H868" stroke="#1e9e6a" strokeWidth="3" className={day || !grid ? "twin-flow" : ""} />
 
         {/* clock */}
-        <g transform="translate(1100 300)">
-          <text textAnchor="end" fontSize="26" fontWeight="700" fill="#eef2f5">{fmt(t)}</text>
+        <g transform={phone ? "translate(1145 40)" : "translate(1100 300)"}>
+          <text textAnchor="end" fontSize={26 * k} fontWeight="700" fill="#eef2f5">{fmt(t)}</text>
         </g>
       </svg>
 

@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     demo_customer_name: str = "Ada"
     demo_chat_per_hour: int = 5          # questions per visitor per hour (protects the AI quota)
     frontend_origins: str = "http://localhost:3000"        # dashboard address(es), comma-separated
+    app_url: str = ""                      # the live web app, e.g. https://solardokta.vercel.app (for links)
+    public_api_url: str = ""               # this API's public address, e.g. https://solardokta-api.onrender.com
+    # WhatsApp through Twilio
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = "whatsapp:+14155238886"    # Twilio's sandbox number until we get our own
+    whatsapp_demo: bool = True             # numbers not linked to a site chat with the demo home
+    whatsapp_per_hour: int = 20            # questions per linked number per hour
+    alerts_enabled: bool = True
 
 
 @lru_cache

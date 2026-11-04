@@ -2,6 +2,7 @@
 // How SolarDokta connects: the SolarDokta Link box on the inverter, the readings travelling every
 // 5 minutes, the checks in the cloud, and the answers on WhatsApp and the technician's screen.
 import { useEffect, useState } from "react";
+import { usePhone } from "@/lib/usePhone";
 
 const STEPS = [
   { title: "A small box plugs into your inverter",
@@ -17,6 +18,8 @@ const STEPS = [
 export function HowItWorks() {
   const [active, setActive] = useState(0);
   const [auto, setAuto] = useState(true);
+  const phone = usePhone();
+  const k = phone ? 1.45 : 1;                     // bigger words on a phone, where the drawing is small
 
   useEffect(() => {
     if (!auto || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -50,15 +53,15 @@ export function HowItWorks() {
         <g opacity={active <= 1 ? 1 : 0.6} style={{ transition: "opacity .4s" }}>
           <rect x="44" y="140" width="120" height="170" rx="12" fill="#e9edf3" />
           <rect x="62" y="162" width="84" height="40" rx="5" fill="#1d3a2e" />
-          <text x="104" y="188" textAnchor="middle" fontSize="16" fill="#7ce3b0" fontWeight="700">78%</text>
-          <text x="104" y="232" textAnchor="middle" fontSize="13" fill="#5e6b80">Inverter</text>
+          <text x="104" y={phone ? 191 : 188} textAnchor="middle" fontSize={16 * k} fill="#7ce3b0" fontWeight="700">78%</text>
+          <text x="104" y="236" textAnchor="middle" fontSize={13 * k} fill="#5e6b80">Inverter</text>
           <rect x="164" y="214" width="20" height="10" fill="#9aa7bb" />
           <g>
             <rect x="184" y="196" width="62" height="46" rx="9" fill="#f2b705" />
             <circle cx="234" cy="208" r="4.5" fill="#1e9e6a" className="led" />
-            <text x="208" y="226" textAnchor="middle" fontSize="11" fontWeight="700" fill="#16233f">Link</text>
+            <text x="208" y={phone ? 229 : 226} textAnchor="middle" fontSize={11 * k} fontWeight="700" fill="#16233f">Link</text>
           </g>
-          <text x="215" y="268" textAnchor="middle" fontSize="13" fill="#eef2f5" >SolarDokta Link</text>
+          <text x={phone ? 150 : 215} y={phone ? 340 : 268} textAnchor="middle" fontSize={13 * k} fill="#eef2f5">SolarDokta Link</text>
         </g>
 
         {/* signal */}
@@ -68,15 +71,15 @@ export function HowItWorks() {
                   strokeLinecap="round" className="wave" style={{ animationDelay: `${i * 0.25}s` }} />
           ))}
           <path d="M318 214 C360 180 380 140 410 128" fill="none" stroke="#f2b705" strokeWidth="2.5" className="twin-flow" />
-          <text x="300" y="150" fontSize="13" fill="#eef2f5" textAnchor="end">every 5 minutes</text>
-          <text x="300" y="168" fontSize="12" fill="#9fb0c8" textAnchor="end">Wi-Fi or SIM card</text>
+          <text x={phone ? 330 : 300} y={phone ? 100 : 150} fontSize={13 * k} fill="#eef2f5" textAnchor="end">every 5 minutes</text>
+          <text x={phone ? 330 : 300} y={phone ? 124 : 168} fontSize={12 * k} fill="#9fb0c8" textAnchor="end">Wi-Fi or SIM card</text>
         </g>
 
         {/* cloud */}
         <g opacity={on(2) + 0.2} style={{ transition: "opacity .4s" }}>
           <path d="M420 140 a34 34 0 0 1 12 -66 a46 46 0 0 1 88 -10 a32 32 0 0 1 40 46 a30 30 0 0 1 -12 30 Z" fill="#2c4470" stroke="#7ea2ff" strokeWidth="2" />
-          <text x="490" y="104" textAnchor="middle" fontSize="15" fontWeight="700" fill="#eef2f5">SolarDokta</text>
-          <text x="490" y="124" textAnchor="middle" fontSize="12" fill="#c6d3ea">checks + weather</text>
+          <text x="490" y="104" textAnchor="middle" fontSize={15 * (phone ? 1.25 : 1)} fontWeight="700" fill="#eef2f5">SolarDokta</text>
+          <text x="490" y={phone ? 128 : 124} textAnchor="middle" fontSize={12 * (phone ? 1.3 : 1)} fill="#c6d3ea">checks + weather</text>
         </g>
 
         {/* outputs */}
@@ -86,9 +89,9 @@ export function HowItWorks() {
           {/* phone */}
           <rect x="360" y="262" width="86" height="140" rx="14" fill="#eef2f5" />
           <rect x="366" y="280" width="74" height="40" rx="8" fill="#ffffff" stroke="#d5dde6" />
-          <text x="372" y="297" fontSize="10" fill="#16233f">Yes, iron now.</text>
-          <text x="372" y="311" fontSize="10" fill="#16233f">Battery 78%</text>
-          <text x="403" y="392" textAnchor="middle" fontSize="11" fill="#5e6b80">You</text>
+          <text x="372" y="297" fontSize={phone ? 13 : 10} fill="#16233f">{phone ? "Yes, iron" : "Yes, iron now."}</text>
+          <text x="372" y={phone ? 314 : 311} fontSize={phone ? 13 : 10} fill="#16233f">{phone ? "now. 78%" : "Battery 78%"}</text>
+          <text x="403" y="392" textAnchor="middle" fontSize={11 * k} fill="#5e6b80">You</text>
           {/* laptop */}
           <rect x="506" y="276" width="116" height="78" rx="6" fill="#eef2f5" />
           <rect x="492" y="354" width="144" height="10" rx="3" fill="#c3ccd8" />
@@ -96,7 +99,7 @@ export function HowItWorks() {
           <rect x="550" y="300" width="58" height="6" rx="3" fill="#9aa7bb" />
           <circle cx="536" cy="330" r="7" fill="#1e9e6a" />
           <rect x="550" y="324" width="44" height="6" rx="3" fill="#9aa7bb" />
-          <text x="564" y="392" textAnchor="middle" fontSize="11" fill="#c6d3ea">Your installer</text>
+          <text x="564" y={phone ? 396 : 392} textAnchor="middle" fontSize={11 * k} fill="#c6d3ea">Your installer</text>
         </g>
       </svg>
     </div>

@@ -7,6 +7,7 @@
     anomaly   every night: score yesterday with the autoencoder on Modal (Isolation Forest
               fallback) and record unusual days as findings
     detect    every hour: run the rule detectors and keep each site's findings up to date
+    alerts    every hour, just after detect: WhatsApp new problems to customers and technicians
 """
 
 import logging
@@ -47,8 +48,10 @@ def refresh_forecast(client=None) -> dict:
 
 def purge(client=None) -> dict:
     client = client or get_client()
+    from app.whatsapp import purge_conversations
+
     deleted = client.rpc("purge_old_telemetry", {"p_keep_days": RAW_KEEP_DAYS}).execute().data
-    return {"raw_rows_deleted": deleted}
+    return {"raw_rows_deleted": deleted, "old_chats_deleted": purge_conversations(client)}
 
 
 def anomaly(client=None) -> dict:
@@ -63,4 +66,11 @@ def detect(client=None) -> list[dict]:
     return live.run(active_sites(client), client=client)
 
 
-JOBS = {"forecast": refresh_forecast, "purge": purge, "anomaly": anomaly, "detect": detect}
+def alerts(client=None) -> dict:
+    from app.whatsapp import send_alerts
+
+    return send_alerts(client)
+
+
+JOBS = {"forecast": refresh_forecast, "purge": purge, "anomaly": anomaly, "detect": detect,
+        "alerts": alerts}

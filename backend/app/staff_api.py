@@ -316,29 +316,38 @@ class FleetChat(BaseModel):
     history: list[dict] = Field(default_factory=list, max_length=20)
 
 
-@router.post("/fleet/chat")
-def fleet_chat(body: FleetChat, profile: Staff, request: Request) -> dict:
+def fleet_answer(profile: dict, message: str, history: list[dict]) -> tuple[str, str | None]:
+    """Answer a technician's question about all their sites (web app and WhatsApp).
+    Raises LLMError if no AI could answer."""
     import json
 
     from app import dashboard
-    from app.agent.llm import LLMError
     from app.agent.providers import make_llm
 
-    if profile.get("demo"):
-        dashboard.demo_chat_allowed(request)
     data = fleet(profile)
     for s in data["sites"]:
         s.pop("latitude", None)
         s.pop("longitude", None)
     system = FLEET_SYSTEM.format(today=pd.Timestamp.now(tz="Africa/Lagos").strftime("%A %d %B %Y, %H:%M"),
                                  data=json.dumps(data, default=str))
-    msgs = [{"role": m.get("role"), "text": m.get("text")} for m in body.history[-10:]
+    msgs = [{"role": m.get("role"), "text": m.get("text")} for m in history[-10:]
             if m.get("role") in ("user", "model") and m.get("text")]
-    msgs.append({"role": "user", "text": body.message})
+    msgs.append({"role": "user", "text": message})
+    dashboard._llm = dashboard._llm or make_llm()
+    turn = dashboard._llm.generate(system, msgs, [], allow_tools=False)
+    return (turn.text or "No answer came back. Try asking another way.",
+            getattr(dashboard._llm, "last_model", None))
+
+
+@router.post("/fleet/chat")
+def fleet_chat(body: FleetChat, profile: Staff, request: Request) -> dict:
+    from app import dashboard
+    from app.agent.llm import LLMError
+
+    if profile.get("demo"):
+        dashboard.demo_chat_allowed(request)
     try:
-        dashboard._llm = dashboard._llm or make_llm()
-        turn = dashboard._llm.generate(system, msgs, [], allow_tools=False)
+        text, model = fleet_answer(profile, body.message, body.history)
     except LLMError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Ask Dokta can't answer right now. Try again shortly.") from exc
-    return {"reply": turn.text or "No answer came back. Try asking another way.",
-            "model": getattr(dashboard._llm, "last_model", None)}
+    return {"reply": text, "model": model}

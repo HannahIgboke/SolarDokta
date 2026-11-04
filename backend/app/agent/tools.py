@@ -655,7 +655,7 @@ def heat_outlook(ctx: ToolContext) -> dict:
         out.update({
             "battery_average_c": round(float(temps.mean()), 1),
             "battery_hottest_c": round(float(temps.max()), 1),
-            "battery_hot_days_last_30": int((daily_max > HEAT_STRESS_C).sum()),
+            "battery_hot_days_last_30": int((daily_max.iloc[-30:] > HEAT_STRESS_C).sum()),   # 30 days, not 31
             "ageing_speed_vs_25c": round(factor, 2),
             "extra_wear_percent_per_year": round(100 * normal * max(0.0, factor - 1), 2),
             "extra_wear_this_el_nino_season_percent": round(100 * normal * max(0.0, factor - 1) / 2, 2),
