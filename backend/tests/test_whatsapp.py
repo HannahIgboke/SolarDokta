@@ -44,7 +44,7 @@ def wa(monkeypatch):
                  "whatsapp_demo": True, "demo_site": "lagos-001", "alerts_enabled": True}.items():
         monkeypatch.setattr(s, k, v)
     outbox = []
-    monkeypatch.setattr(whatsapp, "send", lambda to, body, status_callback=False: outbox.append((to, body)) or "SM1")
+    monkeypatch.setattr(whatsapp, "send", lambda to, body, status_callback=False, from_=None: outbox.append((to, body)) or "SM1")
     llm = OneLine()
     monkeypatch.setattr(dashboard, "_llm", llm)
     whatsapp._recent.clear()
@@ -198,3 +198,22 @@ def test_delivery_reports_update_the_alert(wa):
     sig = base64.b64encode(hmac.new(TOKEN.encode(), payload.encode(), hashlib.sha1).digest()).decode()
     r = client.post("/whatsapp/status", data=params, headers={"X-Twilio-Signature": sig})
     assert r.status_code == 204 and db.tables["alerts"][0]["status"] == "read"
+
+
+def test_replies_come_from_the_number_they_wrote_to(wa, monkeypatch):
+    client, _, _, _ = wa
+    sent = []
+    monkeypatch.setattr(whatsapp, "send", lambda to, body, status_callback=False, from_=None: sent.append(from_))
+    post(client, {"From": "whatsapp:+2348030000002", "To": "whatsapp:+17372508034", "Body": "hi", "MessageSid": "SMt"})
+    assert sent == ["whatsapp:+17372508034"]
+
+
+def test_twilio_refusals_say_why(monkeypatch):
+    import httpx
+    s = get_settings()
+    monkeypatch.setattr(s, "twilio_account_sid", "AC1")
+    monkeypatch.setattr(s, "twilio_auth_token", TOKEN)
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: httpx.Response(
+        400, json={"code": 63007, "message": "Twilio could not find a Channel with the specified From address"}))
+    with pytest.raises(whatsapp.TwilioError, match="63007"):
+        whatsapp.send("+2348030000002", "hello", from_="whatsapp:+14155238886")

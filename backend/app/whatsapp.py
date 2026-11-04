@@ -79,17 +79,29 @@ async def _verified_form(request: Request) -> dict:
     return params
 
 
-def send(to: str, body: str, status_callback: bool = False) -> str | None:
+class TwilioError(RuntimeError):
+    """Twilio refused a message; the text says why (e.g. code 63007: unknown 'From' number)."""
+
+
+def send(to: str, body: str, status_callback: bool = False, from_: str | None = None) -> str | None:
     """Send one WhatsApp message through Twilio. Returns Twilio's message id."""
     s = get_settings()
     if not (s.twilio_account_sid and s.twilio_auth_token):
         raise RuntimeError("TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN are not set")
-    data = {"From": s.twilio_whatsapp_from, "To": f"whatsapp:{normalize_phone(to)}", "Body": body[:1500]}
+    # Reply from the number the person wrote to (from_), so a wrong TWILIO_WHATSAPP_FROM can't break replies.
+    sender = from_ if (from_ or "").startswith("whatsapp:") else s.twilio_whatsapp_from
+    data = {"From": sender, "To": f"whatsapp:{normalize_phone(to)}", "Body": body[:1500]}
     if status_callback and s.public_api_url:
         data["StatusCallback"] = s.public_api_url.rstrip("/") + "/whatsapp/status"
     r = httpx.post(f"https://api.twilio.com/2010-04-01/Accounts/{s.twilio_account_sid}/Messages.json",
                    data=data, auth=(s.twilio_account_sid, s.twilio_auth_token), timeout=15)
-    r.raise_for_status()
+    if r.status_code >= 400:
+        try:
+            err = r.json()
+            why = f"code {err.get('code')}: {err.get('message')} (from {sender})"
+        except ValueError:
+            why = r.text[:300]
+        raise TwilioError(f"Twilio said {r.status_code}, {why}")
     return r.json().get("sid")
 
 
@@ -207,12 +219,17 @@ def handle(params: dict) -> None:
     phone = normalize_phone(params.get("From"))
     if not phone:
         return
+    ours = params.get("To")                       # our WhatsApp number, as the person wrote to it
+
+    def reply(body: str) -> None:
+        send(phone, body, from_=ours)
+
     try:
         person = find_person(phone, client)
         demo = person is None
         if demo:
             if not s.whatsapp_demo:
-                send(phone, NOT_LINKED)
+                reply(NOT_LINKED)
                 return
             person = {"id": None, "role": "customer", "preferred_language": "en"}
         lang = person.get("preferred_language") or "en"
@@ -220,10 +237,10 @@ def handle(params: dict) -> None:
         if person["role"] == "customer":
             site = _demo_site(client) if demo else _customer_site(person, client)
             if site is None:
-                send(phone, NOT_LINKED)
+                reply(NOT_LINKED)
                 return
         if not _allowed(phone, s.demo_chat_per_hour if demo else s.whatsapp_per_hour):
-            send(phone, TOO_MANY)
+            reply(TOO_MANY)
             return
 
         text, kind = (params.get("Body") or "").strip(), "text"
@@ -235,11 +252,11 @@ def handle(params: dict) -> None:
                 heard = reader.read_file("question", _download(params["MediaUrl0"]), media_type)
                 text, kind = (heard.get("transcript") or "").strip()[:1000], "voice"
                 if not text:
-                    send(phone, "I couldn't hear that clearly. Please try again or type it.")
+                    reply("I couldn't hear that clearly. Please try again or type it.")
                     return
             elif not text:
                 link = f" ({s.app_url.rstrip('/')})" if s.app_url else ""
-                send(phone, PHOTO.get(lang, PHOTO["en"]).format(link=link))
+                reply(PHOTO.get(lang, PHOTO["en"]).format(link=link))
                 return
         if not text:
             return
@@ -258,11 +275,11 @@ def handle(params: dict) -> None:
         if first_time:
             answer = f"{WELCOME}\n\n{answer}"
         _log(client, phone, "out", "text", answer, site, None if demo else person, tools)
-        send(phone, answer)
+        reply(answer)
     except Exception:
         log.exception("WhatsApp message from %s failed", phone[:6] + "…")
         try:
-            send(phone, SORRY)
+            reply(SORRY)
         except Exception:
             log.exception("Couldn't even send the apology")
 
