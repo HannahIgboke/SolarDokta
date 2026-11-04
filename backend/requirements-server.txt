@@ -1,0 +1,15 @@
+fastapi==0.162.0
+google-genai==2.34.0
+httpx==0.28.1
+joblib==1.6.0
+modal==1.6.3
+numpy==2.5.4
+pandas==3.1.0
+pvlib==0.16.1
+pydantic==2.14.2
+pydantic-settings==2.16.2
+python-multipart==0.0.33
+scikit-learn==1.9.1
+supabase==2.33.0
+tenacity==9.1.4
+uvicorn[standard]==0.54.0
