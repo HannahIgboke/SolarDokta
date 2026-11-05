@@ -8,8 +8,9 @@ SolarDokta watches a home's or small business's solar system every 5 minutes. It
 
 | Try it (no account needed) | |
 |---|---|
-| Customer's view | `https://<your-app>.vercel.app/demo/customer` |
-| Technician's view | `https://<your-app>.vercel.app/demo/technician` |
+| Home view | `https://solar-dokta.vercel.app/` |
+| Customer's view | `https://solar-dokta.vercel.app/demo/customer` |
+| Technician's view | `https://solar-dokta.vercel.app/demo/technician` |
 
 The demo is a simulated home in Ikeja that updates live every 5 minutes. You can look at everything, but nothing can be changed, and Ask Dokta allows 5 questions an hour per visitor.
 
@@ -67,26 +68,29 @@ Every design choice below starts from something the problem demands.
 | **Answers grounded in *this* home's numbers**, which change every 5 minutes. | **A tool-calling agent.** Each tool reads the live site data (battery, forecast, faults, prices). | **No RAG:** the facts are live numbers in a database, not documents to search. Retrieving text chunks would give stale or approximate figures. **No fine-tuning:** the knowledge changes every 5 minutes, and the style is easy to set in the prompt. |
 | **Never inventing a number** about someone's money or battery. | Rules say every figure must come from a tool; if there's no data, say so. | The model writes sentences, the data supplies the numbers. |
 | **Working on Nigerian networks and free budgets.** AI services time out, hit quotas or are blocked by some networks. | **A chain of AI providers** (Gemini → Groq → GitHub Models → more), plus a **no-AI backup** that writes the answer straight from the tool results. | Relying on one provider would make the product unusable on a bad day. |
-| **Reaching people as they actually talk.** | **English, Pidgin and Igbo, voice notes, WhatsApp**, and receipts read from photos. | Many owners would rather send a voice note in Pidgin than type English into an app. |
+| **Reaching people as they actually talk.** | **English, Pidgin and Igbo, voice questions**, and receipts read from photos. | Many owners would rather say it in Pidgin than type English into an app. |
+| **Warning people before the light goes off**, on a phone, for free. | **An installable web app with phone notifications** (Web Push). WhatsApp is built too, ready for a paid business number. | No app-store approval or per-message cost: alerts reach Android phones, and iPhones once added to the Home Screen. WhatsApp's business numbers cost money, so it waits for a paying installer. |
 | **Saying when the battery will need replacing**, with El Niño heat. | **Measured battery health (SOH)** from deep discharges, plus a **heat model** that projects life "as now" vs "kept cool". | A typical datasheet figure ignores how hot *this* battery room actually is. |
 
 ---
 
 ## 4. What it does
 
-**For customers** (web, and WhatsApp next)
+**For customers** (an app on their phone's home screen, or any browser)
 - **Home:** one plain sentence about right now, a live picture of the system, "Can I use…?" for any appliance, open problems explained, tonight and tomorrow, and an El Niño banner.
 - **My usage:** any day or range, told as sentences ("97% of what you used came from your solar"), with NEPA hours, heat, naira saved and battery health.
 - **Learn:** 16 solar words (SOC, SOH, string…) with pictures, how *yours* is doing, sliders and a quick quiz.
 - **Tell us:** photos of token or fuel receipts set real prices, voice notes reach the technician, nameplate photos are checked against the records.
 - **Ask Dokta:** typed or spoken, answered in English, Pidgin or Igbo.
 - **Battery report:** a printable page from installation to replacement, with cycles, the projection with heat vs kept cool, and a resale grade.
+- **Alerts on the phone:** install SolarDokta from the browser (no app store) and turn on notifications. Problems pop up in the customer's language even when the app is closed, plus a 7 pm note about tonight and tomorrow. Non-urgent alerts wait until morning.
 
 **For installers and technicians**
 - **Overview and map:** "3 of your 40 sites need a visit today", ranked by urgency with what to bring. Pins coloured by problems, heat risk or NEPA hours.
 - **Problems inbox:** every finding, worst first; resolve or dismiss with a note.
 - **What-if lab:** test any site against NEPA collapse, a heatwave, a sealed battery room, dust, a dead string or a new AC over the next 7 days.
 - **Ask Dokta for the fleet:** "Which batteries are suffering most from the heat?"
+- **Alerts on the phone:** critical faults and customer reports pop up with the site and what to bring; tapping opens that site.
 
 <!-- Screenshots: customer home, my usage, ask dokta, technician overview, map, what-if: add after deployment -->
 
@@ -111,22 +115,23 @@ Every design choice below starts from something the problem demands.
 | Schedule | Job |
 |---|---|
 | every 5 minutes | Read each site, save telemetry, update hourly and daily totals |
-| every hour | Run the rule detectors; open, update or close findings |
+| every hour | Run the rule detectors; open, update or close findings; then send new problems as phone alerts |
 | every 3 hours | Save the 3-day weather forecast (tomorrow's plan, heatwave warnings) |
-| nightly | Score yesterday with the ML anomaly model; delete raw readings older than 30 days |
+| 7 pm daily | "Tonight and tomorrow" phone note for each customer with alerts on |
+| nightly | Score yesterday with the ML anomaly model; delete raw readings older than 30 days and chats older than 90 |
 
 **Stack**
 
 | Layer | Technology |
 |---|---|
-| Web | Next.js 15, React 19, Tailwind CSS 4, Recharts, Leaflet (OpenStreetMap), on Vercel |
+| Web | Next.js 15, React 19, Tailwind CSS 4, Recharts, Leaflet (OpenStreetMap), on Vercel; installable app (web manifest, service worker) |
 | API | Python, FastAPI, Pydantic, on Render |
 | Data | Supabase: Postgres, Auth with Row Level Security, private Storage, Cron |
 | Physics | pandas, NumPy, pvlib; weather from Open-Meteo and NASA POWER |
 | Machine learning | PyTorch autoencoder served on Modal; scikit-learn Isolation Forest as fallback |
 | Language AI | Gemini (chat, voice, reading receipts), Groq, GitHub Models, OpenRouter, Mistral |
-| Messaging | Twilio WhatsApp |
-| Quality | 138 automated tests (pytest), Ruff, ESLint, TypeScript |
+| Alerts | Web Push (VAPID, pywebpush); WhatsApp through Twilio built and tested, switched on with a paid number |
+| Quality | 159 automated tests (pytest), Ruff, ESLint, TypeScript |
 
 ---
 
@@ -191,7 +196,7 @@ Rules only catch what someone thought of. The autoencoder is a second opinion fo
 2. **Language:** English, Pidgin or Igbo, from the app's switch or detected from the words.
 3. **Fast path:** keywords pick the tools needed ("iron" → `can_i_run`, "tomorrow" → `tomorrow_plan`). Those tools run *before* the model is called, in parallel, so most answers need one model call.
 4. **Model:** gets the system rules, this customer's system, the last 10 messages, the question and the live data. It may call more tools, up to 4 rounds.
-5. **Checks:** echoed instruction tags are removed, a reply in the wrong language is retried once, and replies stay short enough for WhatsApp.
+5. **Checks:** echoed instruction tags are removed, a reply in the wrong language is retried once, and replies stay short and plain (they're written to fit a chat message).
 
 | Tool | Answers |
 |---|---|
@@ -269,7 +274,7 @@ Out-of-fold recall, 4 time-blocked folds.
 
 ### The agent
 
-The agent, tools, language detection, provider chain, no-AI backup, voice, demo limits and what-if lab are covered by **138 automated tests**. They use a scripted fake model, so they check the logic without paying for or waiting on a real AI service.
+The agent, tools, language detection, provider chain, no-AI backup, voice, demo limits, what-if lab, phone alerts and WhatsApp are covered by **159 automated tests**. They use a scripted fake model, so they check the logic without paying for or waiting on a real AI service.
 
 ---
 
@@ -304,11 +309,12 @@ One avoided wasted trip across Lagos costs more than a month's subscription. Run
 - **Assumptions:** NEPA hours for the crisis come from news reports; prices are placeholders until customers upload receipts; ageing constants are typical LiFePO4 and lead-acid values, not brand-specific. "Twice as fast per 10°C" is a rule of thumb.
 - **Igbo** needs review by a fluent speaker.
 - **Free AI tiers** can be slow, rate-limited or blocked; the no-AI backup covers common questions, not everything.
+- **WhatsApp isn't live.** Twilio's free trial only allows ready-made template messages, so the WhatsApp channel (built and tested) needs a paid business number. Phone notifications cover alerts meanwhile, but they need the app installed on iPhone and don't work in some phone browsers without Google services.
 
 **Responsible AI**
 - **Numbers come from data, never from the model.** If there's no data, Ask Dokta says so.
 - **Safety first.** It never tells customers to open the inverter or battery, touch wiring or climb the roof. Serious problems go to the installer.
-- **Calibrated alerts.** Customers only see rule findings (2 false alarms in 80 site-months). The ML check goes to technicians, as a prompt to look, not a verdict.
+- **Calibrated alerts.** Customers only see rule findings (2 false alarms in 80 site-months). The ML check goes to technicians, as a prompt to look, not a verdict. Non-urgent alerts are held between 9:30 pm and 6:30 am, and the same problem is sent at most once a day.
 - **Humans decide.** Technicians resolve or dismiss every finding. The what-if lab never changes a customer's system or view.
 - **Privacy.** Voice questions aren't stored. Uploads sit in a private bucket behind short-lived links. Row Level Security means a customer can only read their own site. The service key never reaches the browser. The public demo is read-only, with phone numbers masked.
 - **Inclusion.** English, Pidgin and Igbo, voice for people who would rather talk than type, and plain words with pictures instead of jargon.

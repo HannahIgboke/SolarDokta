@@ -15,6 +15,7 @@ Safety checks (a bad join here once made the simulator think September had no su
   instead of guessing
 """
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from app.simulator.site import SiteConfig
 from app.weather import open_meteo
 from app.weather.points import WeatherPoint, weather_point
 
+log = logging.getLogger(__name__)
 NASA_DIR = REPO_ROOT / "ml" / "data" / "raw" / "nasa_power"
 LABEL = "left"
 PAD = pd.Timedelta(hours=3)
@@ -56,6 +58,46 @@ def _forecast(point: WeatherPoint, past_days: int, forecast_days: int, hour: str
     """Cached per clock hour, so sites sharing a weather point make one request per tick."""
     return _to_left(open_meteo.fetch_hourly(point.latitude, point.longitude, past_days=past_days,
                                             forecast_days=forecast_days))
+
+
+_last_good: dict[WeatherPoint, pd.DataFrame] = {}    # newest weather that downloaded fine
+
+
+def _saved(point: WeatherPoint) -> pd.DataFrame | None:
+    """The weather the forecast job saved in the database (the past week and the days ahead)."""
+    from app.db import get_client
+
+    since = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=8)).isoformat()
+    rows = (get_client().table("weather_forecast").select("ts,ghi_wm2,temp_c")
+            .eq("latitude", point.latitude).eq("longitude", point.longitude)
+            .gte("ts", since).order("ts").range(0, 9999).execute().data)
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    df.index = pd.to_datetime(df.pop("ts"), utc=True)
+    return _to_left(df.astype(float))
+
+
+def _recent(point: WeatherPoint, past_days: int, forecast_days: int, hour: str) -> pd.DataFrame | None:
+    """Recent and coming weather. Open-Meteo first; if it refuses (it rate-limits shared cloud
+    servers with '429 Too Many Requests') or is down, the last good download, then the copy
+    saved in the database, so the 5-minute readings never stop because of the weather service."""
+    try:
+        df = _forecast(point, past_days, forecast_days, hour)
+        _last_good[point] = df
+        return df
+    except Exception as exc:  # noqa: BLE001 - any failure: fall back below
+        log.warning("Open-Meteo unavailable for %s (%s); using saved weather", point, exc)
+    backups = [df for df in (_last_good.get(point),) if df is not None]
+    try:
+        saved = _saved(point)
+        if saved is not None:
+            backups.append(saved)
+    except Exception:
+        log.exception("Couldn't read saved weather for %s", point)
+    if not backups:
+        return None
+    return pd.concat(backups).pipe(lambda d: d[~d.index.duplicated(keep="first")]).sort_index()
 
 
 def drop_dark_days(df: pd.DataFrame) -> pd.DataFrame:
@@ -109,7 +151,7 @@ def hourly_weather(site: SiteConfig, start: pd.Timestamp, end: pd.Timestamp) -> 
     if pad_end > max(covered_until, forecast_from):      # recent days and the future
         past_days = min(92, max(1, (now - max(pad_start, forecast_from)).days + 2))
         forecast_days = max(1, min(16, (pad_end - now).days + 2))
-        sources.append(_forecast(p, past_days, forecast_days, f"{now:%Y-%m-%d %H}"))
+        sources.append(_recent(p, past_days, forecast_days, f"{now:%Y-%m-%d %H}"))
 
     df = stitch(sources, pad_start, pad_end)
     gap = longest_gap_hours(df["ghi_wm2"])

@@ -50,7 +50,12 @@ app.include_router(whatsapp.router)
 app.include_router(push.router)
 
 _busy = {"tick": threading.Lock(), **{name: threading.Lock() for name in JOBS}}
+_started: dict[str, float] = {}        # when the current run of each task began
 _last: dict[str, dict] = {}            # last result of each task, shown on /health
+# A run that takes longer than this is treated as stuck (e.g. a network call that never returned),
+# so the next run goes ahead instead of being skipped forever.
+STUCK_AFTER = {"tick": 10 * 60}
+STUCK_DEFAULT = 60 * 60
 
 
 def require_cron_secret(x_cron_secret: Annotated[str | None, Header()] = None) -> None:
@@ -61,11 +66,30 @@ def require_cron_secret(x_cron_secret: Annotated[str | None, Header()] = None) -
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong or missing X-Cron-Secret")
 
 
+def _running_for(name: str) -> float:
+    return time.monotonic() - _started.get(name, time.monotonic())
+
+
+def _claim(name: str) -> threading.Lock | None:
+    """Take the task's lock. If the previous run looks stuck, give up on it and start fresh."""
+    lock = _busy[name]
+    if lock.acquire(blocking=False):
+        _started[name] = time.monotonic()
+        return lock
+    if _running_for(name) > STUCK_AFTER.get(name, STUCK_DEFAULT):
+        log.error("%s: previous run stuck for %.0f min; starting a fresh one", name, _running_for(name) / 60)
+        fresh = threading.Lock()
+        fresh.acquire()
+        _busy[name], _started[name] = fresh, time.monotonic()
+        return fresh
+    return None
+
+
 def _run(name: str, fn) -> None:
     """Run a task in the background, never two copies of the same task at once."""
-    lock = _busy[name]
-    if not lock.acquire(blocking=False):
-        log.warning("%s skipped: previous run still going", name)
+    lock = _claim(name)
+    if lock is None:
+        log.warning("%s skipped: previous run still going (%.0f s)", name, _running_for(name))
         return
     t0 = time.monotonic()
     try:
@@ -94,7 +118,7 @@ def health() -> dict:
 
 @app.post("/tick", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_cron_secret)])
 def tick(background: BackgroundTasks) -> dict:
-    if _busy["tick"].locked():
+    if _busy["tick"].locked() and _running_for("tick") <= STUCK_AFTER["tick"]:
         return {"accepted": False, "reason": "previous tick still running"}
     background.add_task(_run, "tick", _tick)
     return {"accepted": True}

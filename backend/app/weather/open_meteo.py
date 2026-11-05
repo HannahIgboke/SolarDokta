@@ -19,9 +19,9 @@ HOURLY = {"shortwave_radiation": "ghi_wm2", "temperature_2m": "temp_c", "cloud_c
 LABEL = "right"
 
 
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, max=30), reraise=True)
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=2, max=10), reraise=True)
 def _get(params: dict, url: str = BASE_URL) -> dict:
-    resp = httpx.get(url, params=params, timeout=60)
+    resp = httpx.get(url, params=params, timeout=30)
     resp.raise_for_status()
     return resp.json()
 

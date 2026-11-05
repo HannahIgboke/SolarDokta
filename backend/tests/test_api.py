@@ -79,3 +79,20 @@ def test_server_without_secret_refuses(client, monkeypatch):
     get_settings.cache_clear()
     assert client.post("/tick", headers=SECRET).status_code == 503
 
+
+
+def test_a_stuck_run_does_not_block_the_next_one(monkeypatch):
+    import threading
+
+    from app import main
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setitem(main._busy, "tick", threading.Lock())
+    first = main._claim("tick")
+    assert first is not None
+    assert main._claim("tick") is None                      # still running: skip
+    clock["t"] += 11 * 60                                   # ...but stuck for 11 minutes
+    fresh = main._claim("tick")
+    assert fresh is not None and fresh is not first
+    first.release()                                         # the stuck run finishing later is harmless
+    fresh.release()

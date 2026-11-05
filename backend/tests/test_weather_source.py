@@ -82,3 +82,46 @@ def test_tick_only_needs_the_forecast(monkeypatch):
                         or _hours("2026-10-25", "2026-11-10", ghi=300))
     ws.hourly_weather(HOME, pd.Timestamp("2026-11-02", tz=UTC), pd.Timestamp("2026-11-03", tz=UTC))
     assert calls == ["forecast"]
+
+
+def test_readings_continue_when_open_meteo_refuses(monkeypatch):
+    """Open-Meteo rate-limits shared cloud servers (429): fall back to the saved forecast."""
+    from tests.fakedb import FakeDB
+
+    now = pd.Timestamp("2026-11-05 13:00", tz=UTC)
+    monkeypatch.setattr(ws.pd.Timestamp, "now", staticmethod(lambda tz=None: now))
+    monkeypatch.setattr(ws, "_nasa", lambda path: None)
+    ws._last_good.clear()
+
+    def refused(*a):
+        raise RuntimeError("429 Too Many Requests")
+
+    monkeypatch.setattr(ws, "_forecast", refused)
+    p = ws.weather_point(HOME.latitude, HOME.longitude)
+    saved = _hours("2026-11-01", "2026-11-08", ghi=350)
+    db = FakeDB()
+    db.tables["weather_forecast"] = [
+        {"latitude": p.latitude, "longitude": p.longitude, "ts": ts.isoformat(),
+         "ghi_wm2": float(r.ghi_wm2), "temp_c": float(r.temp_c)} for ts, r in saved.iterrows()]
+    import app.db
+    monkeypatch.setattr(app.db, "get_client", lambda: db)
+    df, label = ws.hourly_weather(HOME, pd.Timestamp("2026-11-05", tz=UTC), pd.Timestamp("2026-11-06", tz=UTC))
+    assert label == "left" and df["ghi_wm2"].max() == 350 and df["ghi_wm2"].notna().all()
+
+
+def test_the_last_good_download_is_reused(monkeypatch):
+    now = pd.Timestamp("2026-11-05 13:00", tz=UTC)
+    monkeypatch.setattr(ws.pd.Timestamp, "now", staticmethod(lambda tz=None: now))
+    monkeypatch.setattr(ws, "_nasa", lambda path: None)
+    monkeypatch.setattr(ws, "_saved", lambda point: None)
+    ws._last_good.clear()
+    good = _hours("2026-11-01", "2026-11-08", ghi=420)
+    monkeypatch.setattr(ws, "_forecast", lambda *a: good)
+    ws.hourly_weather(HOME, pd.Timestamp("2026-11-05", tz=UTC), pd.Timestamp("2026-11-06", tz=UTC))
+
+    def refused(*a):
+        raise RuntimeError("429")
+
+    monkeypatch.setattr(ws, "_forecast", refused)
+    df, _ = ws.hourly_weather(HOME, pd.Timestamp("2026-11-05", tz=UTC), pd.Timestamp("2026-11-06", tz=UTC))
+    assert df["ghi_wm2"].max() == 420

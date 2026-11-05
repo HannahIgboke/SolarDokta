@@ -39,13 +39,20 @@ def refresh_forecast(client=None) -> dict:
     client = client or get_client()
     points = sorted({weather_point(s.latitude, s.longitude) for s in active_sites(client)},
                     key=lambda p: (p.latitude, p.longitude))
-    saved = 0
+    saved, failed = 0, []
     for p in points:
-        df = open_meteo.fetch_forecast(p.latitude, p.longitude, days=3)
+        # 7 days ahead: if Open-Meteo refuses us for a while, the readings and plans keep
+        # running on this saved copy
+        try:
+            df = open_meteo.fetch_forecast(p.latitude, p.longitude, days=7)
+        except Exception:
+            log.exception("Forecast download failed for %s; keeping the saved copy", p)
+            failed.append(f"{p.latitude},{p.longitude}")
+            continue
         saved += save_forecast(p, df, client=client)
     cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=FORECAST_KEEP_DAYS)
     client.table("weather_forecast").delete().lt("ts", _iso(cutoff)).execute()
-    return {"points": len(points), "hours_saved": saved}
+    return {"points": len(points), "hours_saved": saved, "failed": failed}
 
 
 def purge(client=None) -> dict:
