@@ -5,7 +5,8 @@ In:   POST /whatsapp/webhook   Twilio calls this for every message sent to our W
       about their own home; technicians get answers about all their sites. A number that isn't
       linked to anyone chats with the demo home (WHATSAPP_DEMO), a few questions an hour.
 Out:  the "alerts" job (hourly, after detection) sends each new problem to the customer in their
-      language, and critical ones to the installer's technicians.
+      language, and critical ones to the installer's technicians: as phone notifications (push.py)
+      and, when WHATSAPP_ALERTS is on, by WhatsApp.
       POST /whatsapp/status    Twilio reports whether each alert was delivered, read or failed.
 
 Twilio signs every request (X-Twilio-Signature) with our auth token, so nobody else can post to
@@ -396,12 +397,37 @@ def staff_message(kind: str, finding: dict, site_row: dict, customer: dict | Non
             f"{what}{which}. To do: {todo}.{who}")
 
 
-def send_alerts(client=None, now: pd.Timestamp | None = None, sender=None) -> dict:
-    """Tell people about problems found in the last 12 hours that nobody has been told about."""
+def _push_text(kind: str, finding: dict, site: dict, lang: str, customer: dict | None, staff: bool) -> dict:
+    """A phone notification: short title, the same plain message, and where tapping it goes."""
+    if staff:
+        from app.agent.tools import PLAIN
+
+        what, todo = PLAIN.get(kind, (kind.replace("_", " "), "check the site"))
+        target = (finding.get("details") or {}).get("target")
+        which = f" ({'string 1' if target == 'pv1' else 'string 2'})" if target in ("pv1", "pv2") else ""
+        who = f" Customer: {customer.get('full_name')}." if customer else ""
+        return {"title": f"[{finding['severity'].upper()}] {site['name']}",
+                "body": f"{what[0].upper()}{what[1:]}{which}. {todo[0].upper()}{todo[1:]}.{who}",
+                "url": f"/staff/sites/{site['code']}#problems", "tag": f"{site['code']}-{kind}"}
+    texts = CUSTOMER_ALERTS[kind]
+    when = pd.Timestamp(finding["ts_start"]).tz_convert(site.get("timezone") or "Africa/Lagos")
+    body = texts.get(lang, texts["en"]).format(time=when.strftime("%I:%M %p").lstrip("0"),
+                                               high=(finding.get("details") or {}).get("high_c", ""))
+    return {"title": f"SolarDokta: {site['name']}", "body": body, "url": "/my", "tag": f"{site['code']}-{kind}"}
+
+
+def send_alerts(client=None, now: pd.Timestamp | None = None, sender=None, pusher=None) -> dict:
+    """Tell people about problems found in the last 12 hours that nobody has been told about,
+    by phone notification (push) and, when WHATSAPP_ALERTS is on, by WhatsApp."""
+    from app import push
+
     client, s = client or get_client(), get_settings()
     if not s.alerts_enabled:
         return {"sent": 0, "note": "alerts are switched off"}
     sender = sender or (lambda to, body: send(to, body, status_callback=True))
+    pusher = pusher or push.deliver
+    use_whatsapp = s.whatsapp_alerts
+    use_push = pusher is not push.deliver or push.configured()
     now = now or pd.Timestamp.now(tz="UTC")
     quiet = _quiet(now.tz_convert("Africa/Lagos"))
     findings = (client.table("findings").select("id,site_id,kind,severity,status,ts_start,details,created_at")
@@ -414,6 +440,7 @@ def send_alerts(client=None, now: pd.Timestamp | None = None, sender=None) -> di
     profiles = {p["id"]: p for p in client.table("profiles").select(
         "id,org_id,role,full_name,whatsapp_number,preferred_language").range(0, 4999).execute().data}
     sites = {r["id"]: r for r in client.table("sites").select("*").range(0, 4999).execute().data}
+    subs = push.subscriptions(client) if use_push else []
 
     sent = failed = held = 0
     for f in findings:
@@ -422,31 +449,52 @@ def send_alerts(client=None, now: pd.Timestamp | None = None, sender=None) -> di
             continue
         kind, urgent = f["kind"], f["severity"] == "critical"
         customer = profiles.get(site.get("customer_id"))
-        messages = []
-        if kind in CUSTOMER_ALERTS and customer and customer.get("whatsapp_number"):
-            lang = customer.get("preferred_language") or "en"
-            messages.append((customer["whatsapp_number"],
-                             customer_message(kind, f, lang, site.get("timezone") or "Africa/Lagos")))
+        out = []          # (channel, recipient, text for the log, how to send it)
+        if kind in CUSTOMER_ALERTS:
+            if use_whatsapp and customer and customer.get("whatsapp_number"):
+                lang = customer.get("preferred_language") or "en"
+                body = customer_message(kind, f, lang, site.get("timezone") or "Africa/Lagos")
+                out.append(("whatsapp", normalize_phone(customer["whatsapp_number"]), body, None))
+            for sub in subs:
+                if sub["role"] == "customer" and sub.get("site_id") == site["id"]:
+                    msg = _push_text(kind, f, site, sub.get("lang") or "en", customer, staff=False)
+                    if sub.get("demo"):
+                        msg["url"] = "/demo/customer"
+                    out.append(("push", sub["id"], msg["body"], (sub, msg)))
         if kind in STAFF_KINDS:
-            for p in profiles.values():
-                if p["role"] == "staff" and p["org_id"] == site["org_id"] and p.get("whatsapp_number"):
-                    messages.append((p["whatsapp_number"], staff_message(kind, f, site, customer)))
-        for to, body in messages:
-            to = normalize_phone(to)
+            if use_whatsapp:
+                for p in profiles.values():
+                    if p["role"] == "staff" and p["org_id"] == site["org_id"] and p.get("whatsapp_number"):
+                        out.append(("whatsapp", normalize_phone(p["whatsapp_number"]),
+                                    staff_message(kind, f, site, customer), None))
+            for sub in subs:
+                if sub["role"] == "staff" and sub.get("org_id") == site["org_id"]:
+                    msg = _push_text(kind, f, site, "en", customer, staff=True)
+                    if sub.get("demo"):
+                        msg["url"] = "/demo/technician"
+                    out.append(("push", sub["id"], msg["body"], (sub, msg)))
+        for channel, to, body, pushed in out:
             if (f["id"], to) in told or (site["id"], kind, to) in recent:
                 continue
             if quiet and not urgent:
                 held += 1                      # try again after 6:30 am (still inside the 12 hours)
                 continue
-            row = {"site_id": site["id"], "finding_id": f["id"], "channel": "whatsapp", "recipient": to,
+            row = {"site_id": site["id"], "finding_id": f["id"], "channel": channel, "recipient": to,
                    "template": kind, "body": body, "created_at": _iso(now)}
             try:
-                row.update(status="sent", provider_message_id=sender(to, body), sent_at=_iso(now))
+                if channel == "push":
+                    pusher(*pushed)
+                    row.update(status="sent", sent_at=_iso(now))
+                else:
+                    row.update(status="sent", provider_message_id=sender(to, body), sent_at=_iso(now))
+                    mine = customer and normalize_phone(customer.get("whatsapp_number")) == to
+                    _log(client, to, "out", "template", body, SimpleNamespace(id=site["id"]) if mine else None)
                 sent += 1
-                mine = customer and normalize_phone(customer.get("whatsapp_number")) == to
-                _log(client, to, "out", "template", body, SimpleNamespace(id=site["id"]) if mine else None)
+            except push.Gone:
+                client.table("push_subscriptions").delete().eq("id", to).execute()
+                continue
             except Exception:
-                log.exception("Alert to %s… failed", to[:6])
+                log.exception("Alert by %s to %s… failed", channel, to[:6])
                 row["status"] = "failed"
                 failed += 1
             client.table("alerts").insert(row, returning="minimal").execute()

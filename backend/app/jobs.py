@@ -7,7 +7,9 @@
     anomaly   every night: score yesterday with the autoencoder on Modal (Isolation Forest
               fallback) and record unusual days as findings
     detect    every hour: run the rule detectors and keep each site's findings up to date
-    alerts    every hour, just after detect: WhatsApp new problems to customers and technicians
+    alerts    every hour, just after detect: new problems to customers and technicians, as phone
+              notifications (and WhatsApp when switched on)
+    evening   every day at 7 pm: "tonight and tomorrow" notification for each customer
 """
 
 import logging
@@ -72,5 +74,11 @@ def alerts(client=None) -> dict:
     return send_alerts(client)
 
 
+def evening(client=None) -> dict:
+    from app.push import evening as run
+
+    return run(client)
+
+
 JOBS = {"forecast": refresh_forecast, "purge": purge, "anomaly": anomaly, "detect": detect,
-        "alerts": alerts}
+        "alerts": alerts, "evening": evening}

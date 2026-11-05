@@ -41,7 +41,8 @@ def wa(monkeypatch):
         monkeypatch.setattr(mod, "get_client", lambda: db)
     s = get_settings()
     for k, v in {"twilio_auth_token": TOKEN, "twilio_account_sid": "AC1", "public_api_url": "https://api.test",
-                 "whatsapp_demo": True, "demo_site": "lagos-001", "alerts_enabled": True}.items():
+                 "whatsapp_demo": True, "demo_site": "lagos-001", "alerts_enabled": True,
+                 "whatsapp_alerts": True, "vapid_public_key": "", "vapid_private_key": ""}.items():
         monkeypatch.setattr(s, k, v)
     outbox = []
     monkeypatch.setattr(whatsapp, "send", lambda to, body, status_callback=False, from_=None: outbox.append((to, body)) or "SM1")

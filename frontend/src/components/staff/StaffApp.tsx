@@ -7,6 +7,7 @@ import { useApi } from "@/lib/useApi";
 import { TabBar, useHashTab } from "../TabBar";
 import { Failed, Loading } from "../Section";
 import { FleetAsk } from "./FleetAsk";
+import { PhoneAlerts } from "../PhoneAlerts";
 import { FleetMapTab, FleetOverview, FleetTable, urgency } from "./Fleet";
 import type { MapLayer } from "./fleetColours";
 import { ProblemsInbox } from "./ProblemsInbox";
@@ -35,7 +36,12 @@ export function StaffApp({ me }: { me: Me }) {
         { id: "overview", label: "Overview" }, { id: "map", label: "Map" }, { id: "sites", label: "Sites" },
         { id: "problems", label: "Problems", badge: open }, { id: "whatif", label: "What-if lab" }, { id: "ask", label: "Ask Dokta" },
       ]} />
-      {tab === "overview" && <FleetOverview data={data} name={me.full_name} onTab={setTab} />}
+      {tab === "overview" && (
+        <div className="space-y-6">
+          <FleetOverview data={data} name={me.full_name} onTab={setTab} />
+          <PhoneAlerts role="staff" />
+        </div>
+      )}
       {tab === "map" && <FleetMapTab data={data} layer={layer} setLayer={setLayer} />}
       {tab === "sites" && <FleetTable data={data} />}
       {tab === "problems" && (

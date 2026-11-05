@@ -3,7 +3,7 @@
 Endpoints so far:
     GET  /health        is the server up? when did the last tick run? (public)
     POST /tick          run the virtual inverter up to now (Supabase Cron, every 5 minutes)
-    POST /jobs/{name}   run a background job: "forecast", "purge", "anomaly", "detect", "alerts"
+    POST /jobs/{name}   run a background job: "forecast", "purge", "anomaly", "detect", "alerts", "evening"
     POST /whatsapp/...  Twilio's WhatsApp webhook and delivery reports (signed by Twilio)
     /api/...            the dashboard's endpoints (see app/dashboard.py; need a login token)
 
@@ -27,7 +27,7 @@ import pandas as pd
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import dashboard, staff_api, uploads, whatsapp
+from app import dashboard, push, staff_api, uploads, whatsapp
 from app.config import get_settings
 from app.jobs import JOBS, active_sites
 from app.simulator.tick import run_tick
@@ -47,6 +47,7 @@ app.include_router(dashboard.router)
 app.include_router(staff_api.router)
 app.include_router(uploads.router)
 app.include_router(whatsapp.router)
+app.include_router(push.router)
 
 _busy = {"tick": threading.Lock(), **{name: threading.Lock() for name in JOBS}}
 _last: dict[str, dict] = {}            # last result of each task, shown on /health

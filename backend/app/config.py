@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     whatsapp_demo: bool = True             # numbers not linked to a site chat with the demo home
     whatsapp_per_hour: int = 20            # questions per linked number per hour
     alerts_enabled: bool = True
+    whatsapp_alerts: bool = False          # send alerts by WhatsApp too (needs a paid WhatsApp number)
+    # Phone notifications (Web Push). Make the pair once with: python scripts/make_vapid_keys.py
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_contact: str = "mailto:hello@solardokta.app"
 
 
 @lru_cache

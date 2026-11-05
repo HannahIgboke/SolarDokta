@@ -15,6 +15,7 @@ import { AskDokta } from "./AskDokta";
 import { BatteryHealth } from "./BatteryHealth";
 import { CanIUse } from "./CanIUse";
 import { HeatWatch } from "./HeatWatch";
+import { PhoneAlerts } from "../PhoneAlerts";
 import { DeviceBadge, ElNinoBanner } from "./HomeExtras";
 import { Learn } from "./Learn";
 import { LightTracker } from "./LightTracker";
@@ -85,6 +86,7 @@ export function CustomerApp({ me, code }: { me: Me; code: string }) {
           <StatusHeader name={me.full_name} live={live} />
           <DeviceBadge device={live.device} onLearn={() => setTab("learn", { learn: "link" })} />
           <ElNinoBanner onMore={() => setTab("usage", { anchor: "heat" })} />
+          <PhoneAlerts />
           <div className="grid gap-5 lg:grid-cols-[1.65fr_1fr]">
             <LiveSystem code={code} live={live} />
             <div className="space-y-5">
