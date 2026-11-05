@@ -46,21 +46,30 @@ export async function turnOn(lang: string): Promise<PushState> {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "blocked" : "off";
   const { key } = await api<{ key: string | null }>("/api/push/key");
-  if (!key) throw new Error("Alerts aren't set up on the server yet.");
+  if (!key) throw new Error("Alerts aren't set up on the server yet (VAPID_PUBLIC_KEY is missing on Render).");
+  if (!/^B[A-Za-z0-9_-]{85,86}$/.test(key.trim())) {
+    throw new Error("The server's alert key looks wrong: VAPID_PUBLIC_KEY on Render should be about 87 letters starting with B, with no quotes and no 'VAPID_PUBLIC_KEY=' in front.");
+  }
   const reg = await registration();
   if (!reg) return "unsupported";
   await navigator.serviceWorker.ready;
   let sub: PushSubscription;
   try {
     sub = (await reg.pushManager.getSubscription()) ?? await Promise.race([
-      reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }),
+      reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key.trim()) }),
       new Promise<never>((_, no) => setTimeout(() => no(new Error("timeout")), 20000)),
     ]);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    throw new Error(msg === "timeout"
-      ? "Your phone's notification service didn't answer. Check your internet and try again."
-      : "This browser couldn't turn on alerts. Private or incognito windows can't get alerts; open SolarDokta in a normal window or install it, then try again.");
+    const msg = e instanceof Error ? e.message : String(e);
+    const name = e instanceof Error ? e.name : "";
+    if (msg === "timeout") throw new Error("Your phone's notification service didn't answer. Check your internet and try again.");
+    if (name === "InvalidAccessError" || /applicationServerKey|p256|key/i.test(msg)) {
+      throw new Error(`The server's alert key looks wrong (VAPID_PUBLIC_KEY). Details: ${name} ${msg}`);
+    }
+    if (/push service/i.test(msg)) {
+      throw new Error(`This browser has no push service (common on browsers without Google services). Open SolarDokta in Google Chrome and try again. Details: ${name} ${msg}`);
+    }
+    throw new Error(`This browser couldn't turn on alerts. Private or incognito windows can't get alerts; open SolarDokta in Chrome in a normal window, then try again. Details: ${name} ${msg}`);
   }
   const json = sub.toJSON();
   await api("/api/push/subscribe", { method: "POST", body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, lang }) });
