@@ -131,8 +131,28 @@ def longest_gap_hours(s: pd.Series) -> int:
     return longest
 
 
-def hourly_weather(site: SiteConfig, start: pd.Timestamp, end: pd.Timestamp) -> tuple[pd.DataFrame, str]:
-    """Hourly ghi_wm2 + temp_c (UTC index, left-labelled) covering [start, end)."""
+def fill_with_typical_days(df: pd.DataFrame, now: pd.Timestamp, days: int = 7) -> pd.Timestamp | None:
+    """Fill missing FUTURE hours with the average of the same hour over the last week.
+    Used for what-if tests that look further ahead than the forecast we have. Returns the
+    first hour that was filled (None if nothing was missing)."""
+    future_gap = df.index[(df.index > now) & df["ghi_wm2"].isna()]
+    if len(future_gap) == 0:
+        return None
+    recent = df.loc[now - pd.Timedelta(days=days):now].dropna()
+    if recent.empty:
+        return None
+    typical = recent.groupby(recent.index.hour).mean()
+    for col in ("ghi_wm2", "temp_c"):
+        hours = pd.Series(future_gap.hour, index=future_gap)
+        df.loc[future_gap, col] = hours.map(typical[col]).to_numpy()
+    return future_gap[0]
+
+
+def hourly_weather(site: SiteConfig, start: pd.Timestamp, end: pd.Timestamp,
+                   fill_future: bool = False) -> tuple[pd.DataFrame, str]:
+    """Hourly ghi_wm2 + temp_c (UTC index, left-labelled) covering [start, end).
+    fill_future: hours beyond the forecast get last week's typical weather (what-if tests only);
+    the first such hour is kept in df.attrs["typical_from"]."""
     start, end = pd.Timestamp(start).tz_convert("UTC"), pd.Timestamp(end).tz_convert("UTC")
     pad_start, pad_end = (start - PAD).floor("1h"), (end + PAD).ceil("1h")
     now = pd.Timestamp.now(tz="UTC")
@@ -154,10 +174,13 @@ def hourly_weather(site: SiteConfig, start: pd.Timestamp, end: pd.Timestamp) -> 
         sources.append(_recent(p, past_days, forecast_days, f"{now:%Y-%m-%d %H}"))
 
     df = stitch(sources, pad_start, pad_end)
+    typical_from = fill_with_typical_days(df, now) if fill_future else None
     gap = longest_gap_hours(df["ghi_wm2"])
     if gap > MAX_GAP_HOURS:
         first_missing = df.index[df["ghi_wm2"].isna()][0]
         raise ValueError(f"Weather for {site.code} has a {gap}-hour hole (first missing hour "
                          f"{first_missing:%Y-%m-%d %H:%M} UTC). Check your NASA files / internet.")
     df = df.interpolate(limit=MAX_GAP_HOURS, limit_direction="both")
+    if typical_from is not None:
+        df.attrs["typical_from"] = typical_from
     return df, LABEL

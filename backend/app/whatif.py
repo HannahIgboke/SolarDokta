@@ -49,7 +49,7 @@ def weather_for(site: SiteConfig, start: pd.Timestamp, end: pd.Timestamp) -> tup
     from app.simulator.weather_source import (
         hourly_weather,  # needs the internet (forecast)
     )
-    return hourly_weather(site, start, end)
+    return hourly_weather(site, start, end, fill_future=True)
 
 
 def _start_state(site: SiteConfig, ctx: ToolContext) -> tuple[SimState, pd.Timestamp]:
@@ -115,6 +115,7 @@ def run(site: SiteConfig, sc: Scenario, client=None) -> dict:
     after = after.tz_convert(site.timezone)
     until = after + pd.Timedelta(days=sc.days)
     hourly, label = weather_for(site, after.normalize(), until.normalize() + pd.Timedelta(days=1))
+    typical_from = hourly.attrs.get("typical_from")
     faults = store.load_faults(site, after, until, ctx.client)
     soh = state.battery.soh
 
@@ -134,8 +135,13 @@ def run(site: SiteConfig, sc: Scenario, client=None) -> dict:
             grid.what_if_hours.reset(token)
 
     b, t = _metrics(site, base, soh), _metrics(site, test, soh)
+    lines = summary(b, t)
+    if typical_from is not None:
+        day = pd.Timestamp(typical_from).tz_convert(site.timezone)
+        lines.append(f"The weather forecast only reaches {day:%a} {day.day} {day:%b}; the days after "
+                     "use typical weather from the past week.")
     return {"from": after.isoformat(), "days": sc.days, "as_is": b, "what_if": t,
-            "summary": summary(b, t), "scenario": sc.model_dump()}
+            "summary": lines, "scenario": sc.model_dump()}
 
 
 def summary(b: dict, t: dict) -> list[str]:

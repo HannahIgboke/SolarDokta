@@ -125,3 +125,18 @@ def test_the_last_good_download_is_reused(monkeypatch):
     monkeypatch.setattr(ws, "_forecast", refused)
     df, _ = ws.hourly_weather(HOME, pd.Timestamp("2026-11-05", tz=UTC), pd.Timestamp("2026-11-06", tz=UTC))
     assert df["ghi_wm2"].max() == 420
+
+
+def test_what_if_fills_days_beyond_the_forecast_with_typical_weather(monkeypatch):
+    now = pd.Timestamp("2026-11-05 15:00", tz=UTC)
+    monkeypatch.setattr(ws.pd.Timestamp, "now", staticmethod(lambda tz=None: now))
+    monkeypatch.setattr(ws, "_nasa", lambda path: None)
+    monkeypatch.setattr(ws, "_forecast", lambda *a: _hours("2026-10-28", "2026-11-07 23:00", ghi=400))
+    with pytest.raises(ValueError):                         # the 5-minute readings never guess
+        ws.hourly_weather(HOME, pd.Timestamp("2026-11-05", tz=UTC), pd.Timestamp("2026-11-12", tz=UTC))
+    df, _ = ws.hourly_weather(HOME, pd.Timestamp("2026-11-05", tz=UTC), pd.Timestamp("2026-11-12", tz=UTC),
+                              fill_future=True)
+    assert df["ghi_wm2"].notna().all()
+    assert df.loc["2026-11-10 12:00", "ghi_wm2"] == 400     # a typical midday
+    assert df.loc["2026-11-10 02:00", "ghi_wm2"] == 0       # a typical night
+    assert df.attrs["typical_from"] > now
