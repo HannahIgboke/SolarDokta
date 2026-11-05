@@ -70,7 +70,7 @@ def _running_for(name: str) -> float:
     return time.monotonic() - _started.get(name, time.monotonic())
 
 
-def _claim(name: str) -> threading.Lock | None:
+def _claim(name: str) -> "threading.Lock | None":
     """Take the task's lock. If the previous run looks stuck, give up on it and start fresh."""
     lock = _busy[name]
     if lock.acquire(blocking=False):
